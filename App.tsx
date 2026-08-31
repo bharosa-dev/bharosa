@@ -10,20 +10,42 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { supabase } from './lib/supabase';
 import LoginScreen from './screens/LoginScreen';
+import { ensureMyProfile, Profile } from './lib/profile';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(false);
+  const [profile, setProfile] = useState<Profile | null>(null);
+
+  const loadSessionAndProfile = async () => {
+    const { data } = await supabase.auth.getSession();
+    const hasSession = !!data.session;
+    setSession(hasSession);
+
+    if (hasSession) {
+      const p = await ensureMyProfile();
+      setProfile(p);
+    } else {
+      setProfile(null);
+    }
+    setLoading(false);
+  };
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(!!data.session);
-      setLoading(false);
-    });
+    loadSessionAndProfile();
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(!!s);
-    });
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      async (_event, s) => {
+        const hasSession = !!s;
+        setSession(hasSession);
+        if (hasSession) {
+          const p = await ensureMyProfile();
+          setProfile(p);
+        } else {
+          setProfile(null);
+        }
+      }
+    );
 
     return () => {
       listener.subscription.unsubscribe();
@@ -37,6 +59,7 @@ export default function App() {
       return;
     }
     setSession(false);
+    setProfile(null);
   };
 
   if (loading) {
@@ -52,17 +75,19 @@ export default function App() {
     return (
       <>
         <StatusBar style="dark" />
-        <LoginScreen onLoggedIn={() => setSession(true)} />
+        <LoginScreen onLoggedIn={() => loadSessionAndProfile()} />
       </>
     );
   }
+
+  const displayName = profile?.full_name || 'there';
 
   return (
     <View style={styles.home}>
       <StatusBar style="dark" />
 
       <Text style={styles.brand}>Bharosa</Text>
-      <Text style={styles.hello}>Welcome back</Text>
+      <Text style={styles.hello}>Welcome back, {displayName}</Text>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Needs your attention</Text>
@@ -73,7 +98,16 @@ export default function App() {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Recently added</Text>
-        <Text style={styles.cardBody}>Your vault is empty. Next we add documents.</Text>
+        <Text style={styles.cardBody}>
+          Your vault is empty. Next we add documents.
+        </Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Your profile</Text>
+        <Text style={styles.cardBody}>
+          Timezone: {profile?.user_timezone || 'Asia/Kolkata'}
+        </Text>
       </View>
 
       <Pressable style={styles.secondaryBtn} onPress={signOut}>
