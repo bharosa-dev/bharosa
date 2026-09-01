@@ -1,39 +1,39 @@
 import { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ActivityIndicator,
-  Pressable,
-  Alert,
-} from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { supabase } from './lib/supabase';
 import LoginScreen from './screens/LoginScreen';
+import HomeScreen from './screens/HomeScreen';
+import VaultScreen from './screens/VaultScreen';
+import DocumentDetailScreen from './screens/DocumentDetailScreen';
 import { ensureMyProfile, Profile } from './lib/profile';
+
+type Screen = 'home' | 'vault' | 'detail';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [screen, setScreen] = useState<Screen>('home');
+  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
 
   const loadSessionAndProfile = async () => {
     const { data } = await supabase.auth.getSession();
     const hasSession = !!data.session;
     setSession(hasSession);
-
     if (hasSession) {
       const p = await ensureMyProfile();
       setProfile(p);
     } else {
       setProfile(null);
+      setScreen('home');
+      setSelectedDocId(null);
     }
     setLoading(false);
   };
 
   useEffect(() => {
     loadSessionAndProfile();
-
     const { data: listener } = supabase.auth.onAuthStateChange(
       async (_event, s) => {
         const hasSession = !!s;
@@ -43,13 +43,12 @@ export default function App() {
           setProfile(p);
         } else {
           setProfile(null);
+          setScreen('home');
+          setSelectedDocId(null);
         }
       }
     );
-
-    return () => {
-      listener.subscription.unsubscribe();
-    };
+    return () => listener.subscription.unsubscribe();
   }, []);
 
   const signOut = async () => {
@@ -60,6 +59,8 @@ export default function App() {
     }
     setSession(false);
     setProfile(null);
+    setScreen('home');
+    setSelectedDocId(null);
   };
 
   if (loading) {
@@ -80,40 +81,39 @@ export default function App() {
     );
   }
 
-  const displayName = profile?.full_name || 'there';
-
   return (
-    <View style={styles.home}>
+    <>
       <StatusBar style="dark" />
-
-      <Text style={styles.brand}>Bharosa</Text>
-      <Text style={styles.hello}>Welcome back, {displayName}</Text>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Needs your attention</Text>
-        <Text style={styles.cardBody}>
-          No items yet. Documents and reminders will show here.
-        </Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Recently added</Text>
-        <Text style={styles.cardBody}>
-          Your vault is empty. Next we add documents.
-        </Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Your profile</Text>
-        <Text style={styles.cardBody}>
-          Timezone: {profile?.user_timezone || 'Asia/Kolkata'}
-        </Text>
-      </View>
-
-      <Pressable style={styles.secondaryBtn} onPress={signOut}>
-        <Text style={styles.secondaryBtnText}>Sign out</Text>
-      </Pressable>
-    </View>
+      {screen === 'home' && (
+        <HomeScreen
+          profile={profile}
+          onSignOut={signOut}
+          onOpenVault={() => setScreen('vault')}
+        />
+      )}
+      {screen === 'vault' && (
+        <VaultScreen
+          onBack={() => setScreen('home')}
+          onOpenDocument={(id) => {
+            setSelectedDocId(id);
+            setScreen('detail');
+          }}
+        />
+      )}
+      {screen === 'detail' && selectedDocId && (
+        <DocumentDetailScreen
+          documentId={selectedDocId}
+          onBack={() => {
+            setSelectedDocId(null);
+            setScreen('vault');
+          }}
+          onDeleted={() => {
+            setSelectedDocId(null);
+            setScreen('vault');
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -129,54 +129,5 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#152447',
     fontWeight: '700',
-  },
-  home: {
-    flex: 1,
-    backgroundColor: '#F7F7F5',
-    paddingHorizontal: 24,
-    paddingTop: 64,
-  },
-  brand: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#152447',
-  },
-  hello: {
-    fontSize: 16,
-    color: '#5C5C5C',
-    marginBottom: 24,
-    marginTop: 4,
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E8E8E8',
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#152447',
-    marginBottom: 6,
-  },
-  cardBody: {
-    fontSize: 14,
-    color: '#5C5C5C',
-    lineHeight: 20,
-  },
-  secondaryBtn: {
-    marginTop: 24,
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#AD8438',
-  },
-  secondaryBtnText: {
-    color: '#AD8438',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });

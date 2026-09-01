@@ -1,4 +1,6 @@
 import { supabase } from './supabase';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 
 export type DocumentRow = {
   id: string;
@@ -6,10 +8,13 @@ export type DocumentRow = {
   title: string;
   doc_type: string;
   issuer: string | null;
-  expiry_date: string | null; // YYYY-MM-DD
+  expiry_date: string | null;
   notes: string | null;
   confirmation_status: 'not_confirmed' | 'user_confirmed';
   sensitivity: 'standard' | 'sensitive' | 'highly_sensitive';
+  file_path: string | null;
+  file_mime: string | null;
+  file_size_bytes: number | null;
   created_at: string;
 };
 
@@ -17,7 +22,7 @@ export async function listMyDocuments(): Promise<DocumentRow[]> {
   const { data, error } = await supabase
     .from('documents')
     .select(
-      'id, owner_user_id, title, doc_type, issuer, expiry_date, notes, confirmation_status, sensitivity, created_at'
+      'id, owner_user_id, title, doc_type, issuer, expiry_date, notes, confirmation_status, sensitivity, file_path, file_mime, file_size_bytes, created_at'
     )
     .is('deleted_at', null)
     .order('created_at', { ascending: false });
@@ -27,6 +32,25 @@ export async function listMyDocuments(): Promise<DocumentRow[]> {
     return [];
   }
   return data ?? [];
+}
+
+export async function getDocumentById(
+  id: string
+): Promise<DocumentRow | null> {
+  const { data, error } = await supabase
+    .from('documents')
+    .select(
+      'id, owner_user_id, title, doc_type, issuer, expiry_date, notes, confirmation_status, sensitivity, file_path, file_mime, file_size_bytes, created_at'
+    )
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (error) {
+    console.log('getDocumentById', error.message);
+    return null;
+  }
+  return data;
 }
 
 export async function createDocument(input: {
@@ -96,7 +120,6 @@ export async function softDeleteDocument(
   return { ok: true };
 }
 
-/** Docs expiring within the next `days` (including already expired). */
 export function getAttentionDocuments(
   docs: DocumentRow[],
   days = 30
@@ -127,4 +150,120 @@ export function formatExpiryLabel(expiryDate: string | null): string {
   if (diffDays === 0) return 'Expires today';
   if (diffDays === 1) return 'Expires tomorrow';
   return `Expires in ${diffDays} days`;
+}
+
+async function uploadUriToStorage(params: {
+  userId: string;
+  documentId: string;
+  uri: string;
+  mime: string;
+  fileName: string;
+}): Promise<{ ok: true; path: string } | { ok: false; message: string }> {
+  const ext = params.fileName.split('.').pop() || 'bin';
+  const path = `${params.userId}/${params.documentId}/${Date.now()}.${ext}`;
+
+  const response = await fetch(params.uri);
+  const blob = await response.blob();
+
+  const { error } = await supabase.storage.from('documents').upload(path, blob, {
+    contentType: params.mime,
+    upsert: false,
+  });
+
+  if (error) return { ok: false, message: error.message };
+  return { ok: true, path };
+}
+
+export type AttachSource = 'image' | 'camera' | 'file';
+
+export async function attachFileToDocument(
+  documentId: string,
+  source: AttachSource
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError || !userData.user) {
+    return { ok: false, message: 'Not signed in' };
+  }
+
+  let uri = '';
+  let mime = 'application/octet-stream';
+  let fileName = 'file.bin';
+
+  if (source === 'image') {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      return { ok: false, message: 'Photo permission is required' };
+    }
+    const picked = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.7,
+    });
+    if (picked.canceled || !picked.assets?.[0]) {
+      return { ok: false, message: 'Cancelled' };
+    }
+    uri = picked.assets[0].uri;
+    mime = picked.assets[0].mimeType || 'image/jpeg';
+    fileName = picked.assets[0].fileName || 'photo.jpg';
+  } else if (source === 'camera') {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      return { ok: false, message: 'Camera permission is required' };
+    }
+    const picked = await ImagePicker.launchCameraAsync({
+      quality: 0.7,
+    });
+    if (picked.canceled || !picked.assets?.[0]) {
+      return { ok: false, message: 'Cancelled' };
+    }
+    uri = picked.assets[0].uri;
+    mime = picked.assets[0].mimeType || 'image/jpeg';
+    fileName = picked.assets[0].fileName || 'camera.jpg';
+  } else {
+    const picked = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+    if (picked.canceled || !picked.assets?.[0]) {
+      return { ok: false, message: 'Cancelled' };
+    }
+    uri = picked.assets[0].uri;
+    mime = picked.assets[0].mimeType || 'application/octet-stream';
+    fileName = picked.assets[0].name || 'document.bin';
+  }
+
+  const uploaded = await uploadUriToStorage({
+    userId: userData.user.id,
+    documentId,
+    uri,
+    mime,
+    fileName,
+  });
+
+  if (!uploaded.ok) return uploaded;
+
+  const { error } = await supabase
+    .from('documents')
+    .update({
+      file_path: uploaded.path,
+      file_mime: mime,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', documentId);
+
+  if (error) return { ok: false, message: error.message };
+  return { ok: true };
+}
+
+export async function getDocumentSignedUrl(
+  filePath: string
+): Promise<string | null> {
+  const { data, error } = await supabase.storage
+    .from('documents')
+    .createSignedUrl(filePath, 60 * 5);
+
+  if (error) {
+    console.log('signed url error', error.message);
+    return null;
+  }
+  return data.signedUrl;
 }

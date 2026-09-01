@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -20,17 +20,21 @@ import {
   DocumentRow,
 } from '../lib/documents';
 
-type Props = { onBack: () => void };
+type Props = {
+  onBack: () => void;
+  onOpenDocument: (id: string) => void;
+};
 
-export default function VaultScreen({ onBack }: Props) {
+export default function VaultScreen({ onBack, onOpenDocument }: Props) {
   const [docs, setDocs] = useState<DocumentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [query, setQuery] = useState('');
 
   const [title, setTitle] = useState('');
   const [docType, setDocType] = useState('other');
   const [issuer, setIssuer] = useState('');
-  const [expiryDate, setExpiryDate] = useState(''); // YYYY-MM-DD
+  const [expiryDate, setExpiryDate] = useState('');
 
   const [editDoc, setEditDoc] = useState<DocumentRow | null>(null);
 
@@ -44,6 +48,15 @@ export default function VaultScreen({ onBack }: Props) {
   useEffect(() => {
     load();
   }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return docs;
+    return docs.filter((d) => {
+      const hay = `${d.title} ${d.doc_type} ${d.issuer || ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [docs, query]);
 
   const resetForm = () => {
     setTitle('');
@@ -75,7 +88,7 @@ export default function VaultScreen({ onBack }: Props) {
     }
     resetForm();
     await load();
-    Alert.alert('Saved', 'Document added to your vault.');
+    Alert.alert('Saved', 'Document added. Open it to attach a photo.');
   };
 
   const openEdit = (doc: DocumentRow) => {
@@ -137,6 +150,14 @@ export default function VaultScreen({ onBack }: Props) {
         <Text style={styles.title}>Vault</Text>
       </View>
 
+      <TextInput
+        style={styles.search}
+        placeholder="Search title, type, issuer..."
+        placeholderTextColor="#8A8A8A"
+        value={query}
+        onChangeText={setQuery}
+      />
+
       <View style={styles.form}>
         <Text style={styles.label}>Add document</Text>
         <TextInput
@@ -190,37 +211,51 @@ export default function VaultScreen({ onBack }: Props) {
         <ActivityIndicator style={{ marginTop: 24 }} color="#AD8438" />
       ) : (
         <FlatList
-          data={docs}
-          keyExtractor={(item) => item.id}
+          data={filtered}
+          keyExtractor={(row) => row.id}
           refreshControl={
             <RefreshControl refreshing={loading} onRefresh={load} />
           }
           ListEmptyComponent={
-            <Text style={styles.empty}>No documents yet. Add one above.</Text>
+            <Text style={styles.empty}>No documents found.</Text>
           }
           renderItem={({ item }) => (
-            <View style={styles.row}>
+            <Pressable
+              style={styles.row}
+              onPress={() => onOpenDocument(item.id)}
+            >
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle}>{item.title}</Text>
                 <Text style={styles.rowMeta}>
                   {item.doc_type}
                   {item.issuer ? ` · ${item.issuer}` : ''}
+                  {item.file_path ? ' · File' : ''}
                 </Text>
                 {!!item.expiry_date && (
                   <Text style={styles.rowExpiry}>
-                    {formatExpiryLabel(item.expiry_date)} ({item.expiry_date})
+                    {formatExpiryLabel(item.expiry_date)}
                   </Text>
                 )}
               </View>
               <View style={styles.rowActions}>
-                <Pressable onPress={() => openEdit(item)}>
+                <Pressable
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    openEdit(item);
+                  }}
+                >
                   <Text style={styles.edit}>Edit</Text>
                 </Pressable>
-                <Pressable onPress={() => onDelete(item.id, item.title)}>
+                <Pressable
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    onDelete(item.id, item.title);
+                  }}
+                >
                   <Text style={styles.delete}>Remove</Text>
                 </Pressable>
               </View>
-            </View>
+            </Pressable>
           )}
         />
       )}
@@ -282,9 +317,21 @@ export default function VaultScreen({ onBack }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F7F7F5', paddingTop: 56 },
-  header: { paddingHorizontal: 24, marginBottom: 12 },
+  header: { paddingHorizontal: 24, marginBottom: 8 },
   back: { color: '#1A5F9E', fontSize: 16, marginBottom: 8 },
   title: { fontSize: 28, fontWeight: '700', color: '#152447' },
+  search: {
+    marginHorizontal: 24,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    fontSize: 16,
+    color: '#152447',
+  },
   form: {
     marginHorizontal: 24,
     marginBottom: 12,
@@ -338,7 +385,12 @@ const styles = StyleSheet.create({
   },
   rowTitle: { fontSize: 16, fontWeight: '600', color: '#152447' },
   rowMeta: { fontSize: 13, color: '#5C5C5C', marginTop: 2 },
-  rowExpiry: { fontSize: 13, color: '#A96A2A', marginTop: 4, fontWeight: '600' },
+  rowExpiry: {
+    fontSize: 13,
+    color: '#A96A2A',
+    marginTop: 4,
+    fontWeight: '600',
+  },
   rowActions: { alignItems: 'flex-end', gap: 10 },
   edit: { color: '#1A5F9E', fontWeight: '600' },
   delete: { color: '#A96A2A', fontWeight: '600' },
