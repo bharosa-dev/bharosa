@@ -2,6 +2,19 @@ import { supabase } from './supabase';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 
+export type ExtractedField = {
+  value: string;
+  confidence: number | null;
+  source: 'user' | 'ocr';
+};
+
+export type ExtractedFields = {
+  title?: ExtractedField;
+  issuer?: ExtractedField;
+  expiry_date?: ExtractedField;
+  [key: string]: ExtractedField | undefined;
+};
+
 export type DocumentRow = {
   id: string;
   owner_user_id: string;
@@ -15,6 +28,7 @@ export type DocumentRow = {
   file_path: string | null;
   file_mime: string | null;
   file_size_bytes: number | null;
+  extracted_fields: ExtractedFields;
   created_at: string;
 };
 
@@ -22,7 +36,7 @@ export async function listMyDocuments(): Promise<DocumentRow[]> {
   const { data, error } = await supabase
     .from('documents')
     .select(
-      'id, owner_user_id, title, doc_type, issuer, expiry_date, notes, confirmation_status, sensitivity, file_path, file_mime, file_size_bytes, created_at'
+      'id, owner_user_id, title, doc_type, issuer, expiry_date, notes, confirmation_status, sensitivity, file_path, file_mime, file_size_bytes, extracted_fields, created_at'
     )
     .is('deleted_at', null)
     .order('created_at', { ascending: false });
@@ -31,7 +45,7 @@ export async function listMyDocuments(): Promise<DocumentRow[]> {
     console.log('listMyDocuments', error.message);
     return [];
   }
-  return data ?? [];
+  return (data as DocumentRow[]) ?? [];
 }
 
 export async function getDocumentById(
@@ -40,7 +54,7 @@ export async function getDocumentById(
   const { data, error } = await supabase
     .from('documents')
     .select(
-      'id, owner_user_id, title, doc_type, issuer, expiry_date, notes, confirmation_status, sensitivity, file_path, file_mime, file_size_bytes, created_at'
+      'id, owner_user_id, title, doc_type, issuer, expiry_date, notes, confirmation_status, sensitivity, file_path, file_mime, file_size_bytes, extracted_fields, created_at'
     )
     .eq('id', id)
     .is('deleted_at', null)
@@ -50,7 +64,7 @@ export async function getDocumentById(
     console.log('getDocumentById', error.message);
     return null;
   }
-  return data;
+  return data as DocumentRow | null;
 }
 
 export async function createDocument(input: {
@@ -100,6 +114,49 @@ export async function updateDocument(
       issuer: input.issuer?.trim() || null,
       expiry_date: input.expiry_date || null,
       notes: input.notes?.trim() || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+
+  if (error) return { ok: false, message: error.message };
+  return { ok: true };
+}
+
+/** Save user-confirmed fields (manual now; OCR later writes same shape). */
+export async function confirmDocumentFields(
+  id: string,
+  fields: {
+    title: string;
+    issuer?: string;
+    expiry_date?: string | null;
+  }
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const extracted_fields: ExtractedFields = {
+    title: { value: fields.title.trim(), confidence: null, source: 'user' },
+  };
+  if (fields.issuer?.trim()) {
+    extracted_fields.issuer = {
+      value: fields.issuer.trim(),
+      confidence: null,
+      source: 'user',
+    };
+  }
+  if (fields.expiry_date) {
+    extracted_fields.expiry_date = {
+      value: fields.expiry_date,
+      confidence: null,
+      source: 'user',
+    };
+  }
+
+  const { error } = await supabase
+    .from('documents')
+    .update({
+      title: fields.title.trim(),
+      issuer: fields.issuer?.trim() || null,
+      expiry_date: fields.expiry_date || null,
+      extracted_fields,
+      confirmation_status: 'user_confirmed',
       updated_at: new Date().toISOString(),
     })
     .eq('id', id);
@@ -209,9 +266,7 @@ export async function attachFileToDocument(
     if (!perm.granted) {
       return { ok: false, message: 'Camera permission is required' };
     }
-    const picked = await ImagePicker.launchCameraAsync({
-      quality: 0.7,
-    });
+    const picked = await ImagePicker.launchCameraAsync({ quality: 0.7 });
     if (picked.canceled || !picked.assets?.[0]) {
       return { ok: false, message: 'Cancelled' };
     }

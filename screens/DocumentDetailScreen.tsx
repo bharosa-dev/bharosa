@@ -8,12 +8,14 @@ import {
   ActivityIndicator,
   Linking,
   ScrollView,
+  TextInput,
 } from 'react-native';
 import {
   getDocumentById,
   attachFileToDocument,
   getDocumentSignedUrl,
   softDeleteDocument,
+  confirmDocumentFields,
   formatExpiryLabel,
   DocumentRow,
 } from '../lib/documents';
@@ -33,10 +35,19 @@ export default function DocumentDetailScreen({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
+  const [title, setTitle] = useState('');
+  const [issuer, setIssuer] = useState('');
+  const [expiryDate, setExpiryDate] = useState('');
+
   const load = async () => {
     setLoading(true);
     const row = await getDocumentById(documentId);
     setDoc(row);
+    if (row) {
+      setTitle(row.title || '');
+      setIssuer(row.issuer || '');
+      setExpiryDate(row.expiry_date || '');
+    }
     setLoading(false);
   };
 
@@ -78,6 +89,30 @@ export default function DocumentDetailScreen({
       return;
     }
     Linking.openURL(url);
+  };
+
+  const onConfirm = async () => {
+    if (!title.trim()) {
+      Alert.alert('Title is required');
+      return;
+    }
+    if (expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
+      Alert.alert('Expiry must be YYYY-MM-DD');
+      return;
+    }
+    setBusy(true);
+    const result = await confirmDocumentFields(documentId, {
+      title,
+      issuer,
+      expiry_date: expiryDate || null,
+    });
+    setBusy(false);
+    if (!result.ok) {
+      Alert.alert('Could not confirm', result.message);
+      return;
+    }
+    await load();
+    Alert.alert('Confirmed', 'Details saved as user confirmed.');
   };
 
   const onDelete = () => {
@@ -126,6 +161,11 @@ export default function DocumentDetailScreen({
         {doc.doc_type}
         {doc.issuer ? ` · ${doc.issuer}` : ''}
       </Text>
+      <Text style={styles.status}>
+        {doc.confirmation_status === 'user_confirmed'
+          ? 'Status: User confirmed'
+          : 'Status: Not confirmed'}
+      </Text>
 
       {!!doc.expiry_date && (
         <View style={styles.card}>
@@ -143,19 +183,47 @@ export default function DocumentDetailScreen({
         </Text>
       </View>
 
-      {!!doc.notes && (
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>Notes</Text>
-          <Text style={styles.cardValue}>{doc.notes}</Text>
-        </View>
-      )}
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>Confirm details</Text>
+        <Text style={styles.help}>
+          Check these fields. Later OCR will fill them automatically.
+        </Text>
+        <TextInput
+          style={styles.input}
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Title"
+          placeholderTextColor="#8A8A8A"
+        />
+        <TextInput
+          style={styles.input}
+          value={issuer}
+          onChangeText={setIssuer}
+          placeholder="Issuer"
+          placeholderTextColor="#8A8A8A"
+        />
+        <TextInput
+          style={styles.input}
+          value={expiryDate}
+          onChangeText={setExpiryDate}
+          placeholder="Expiry YYYY-MM-DD"
+          placeholderTextColor="#8A8A8A"
+        />
+        <Pressable
+          style={[styles.primaryBtn, busy && { opacity: 0.6 }]}
+          onPress={onConfirm}
+          disabled={busy}
+        >
+          <Text style={styles.primaryBtnText}>Confirm & save</Text>
+        </Pressable>
+      </View>
 
       <Pressable
-        style={[styles.primaryBtn, busy && { opacity: 0.6 }]}
+        style={[styles.secondaryBtn, busy && { opacity: 0.6 }]}
         onPress={onAttach}
         disabled={busy}
       >
-        <Text style={styles.primaryBtnText}>
+        <Text style={styles.secondaryBtnText}>
           {doc.file_path ? 'Replace file' : 'Attach file'}
         </Text>
       </Pressable>
@@ -184,7 +252,14 @@ const styles = StyleSheet.create({
   },
   backLink: { color: '#1A5F9E', fontSize: 16, marginBottom: 12 },
   title: { fontSize: 28, fontWeight: '700', color: '#152447' },
-  meta: { fontSize: 15, color: '#5C5C5C', marginTop: 4, marginBottom: 20 },
+  meta: { fontSize: 15, color: '#5C5C5C', marginTop: 4 },
+  status: {
+    fontSize: 13,
+    color: '#1F6F54',
+    fontWeight: '600',
+    marginTop: 6,
+    marginBottom: 16,
+  },
   card: {
     backgroundColor: '#fff',
     borderRadius: 16,
@@ -200,11 +275,22 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   cardValue: { fontSize: 16, color: '#152447' },
+  help: { fontSize: 13, color: '#5C5C5C', marginBottom: 10, lineHeight: 18 },
+  input: {
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 8,
+    fontSize: 16,
+    color: '#152447',
+  },
   primaryBtn: {
-    marginTop: 12,
+    marginTop: 8,
     backgroundColor: '#AD8438',
     borderRadius: 12,
-    paddingVertical: 16,
+    paddingVertical: 14,
     alignItems: 'center',
   },
   primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
