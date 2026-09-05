@@ -11,6 +11,7 @@ import {
   RefreshControl,
   Modal,
 } from 'react-native';
+import { supabase } from '../lib/supabase';
 import {
   listMyDocuments,
   createDocument,
@@ -27,6 +28,7 @@ type Props = {
 
 export default function VaultScreen({ onBack, onOpenDocument }: Props) {
   const [docs, setDocs] = useState<DocumentRow[]>([]);
+  const [myUserId, setMyUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState('');
@@ -35,11 +37,12 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
   const [docType, setDocType] = useState('other');
   const [issuer, setIssuer] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
-
   const [editDoc, setEditDoc] = useState<DocumentRow | null>(null);
 
   const load = async () => {
     setLoading(true);
+    const { data: userData } = await supabase.auth.getUser();
+    setMyUserId(userData.user?.id ?? null);
     const rows = await listMyDocuments();
     setDocs(rows);
     setLoading(false);
@@ -88,10 +91,14 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
     }
     resetForm();
     await load();
-    Alert.alert('Saved', 'Document added. Open it to attach a photo.');
+    Alert.alert('Saved', 'Document added.');
   };
 
   const openEdit = (doc: DocumentRow) => {
+    if (myUserId && doc.owner_user_id !== myUserId) {
+      Alert.alert('Shared document', 'Only the owner can edit details.');
+      return;
+    }
     setEditDoc(doc);
     setTitle(doc.title);
     setDocType(doc.doc_type);
@@ -106,7 +113,7 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
       return;
     }
     if (expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
-      Alert.alert('Expiry must be YYYY-MM-DD', 'Example: 2027-03-31');
+      Alert.alert('Expiry must be YYYY-MM-DD');
       return;
     }
     setSaving(true);
@@ -126,7 +133,11 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
     await load();
   };
 
-  const onDelete = (id: string, name: string) => {
+  const onDelete = (id: string, name: string, ownerId: string) => {
+    if (myUserId && ownerId !== myUserId) {
+      Alert.alert('Shared document', 'Only the owner can remove it.');
+      return;
+    }
     Alert.alert('Remove document?', name, [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -162,7 +173,7 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
         <Text style={styles.label}>Add document</Text>
         <TextInput
           style={styles.input}
-          placeholder="Title (e.g. Car insurance)"
+          placeholder="Title"
           placeholderTextColor="#8A8A8A"
           value={title}
           onChangeText={setTitle}
@@ -170,7 +181,7 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
         />
         <TextInput
           style={styles.input}
-          placeholder="Type (insurance, id, bill...)"
+          placeholder="Type"
           placeholderTextColor="#8A8A8A"
           value={docType}
           onChangeText={setDocType}
@@ -186,7 +197,7 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
         />
         <TextInput
           style={styles.input}
-          placeholder="Expiry YYYY-MM-DD (optional)"
+          placeholder="Expiry YYYY-MM-DD"
           placeholderTextColor="#8A8A8A"
           value={expiryDate}
           onChangeText={setExpiryDate}
@@ -219,44 +230,52 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
           ListEmptyComponent={
             <Text style={styles.empty}>No documents found.</Text>
           }
-          renderItem={({ item }) => (
-            <Pressable
-              style={styles.row}
-              onPress={() => onOpenDocument(item.id)}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.rowTitle}>{item.title}</Text>
-                <Text style={styles.rowMeta}>
-                  {item.doc_type}
-                  {item.issuer ? ` · ${item.issuer}` : ''}
-                  {item.file_path ? ' · File' : ''}
-                </Text>
-                {!!item.expiry_date && (
-                  <Text style={styles.rowExpiry}>
-                    {formatExpiryLabel(item.expiry_date)}
+          renderItem={({ item }) => {
+            const isShared = !!(myUserId && item.owner_user_id !== myUserId);
+            return (
+              <Pressable
+                style={styles.row}
+                onPress={() => onOpenDocument(item.id)}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle}>{item.title}</Text>
+                  <Text style={styles.rowMeta}>
+                    {item.doc_type}
+                    {item.issuer ? ` · ${item.issuer}` : ''}
+                    {item.file_path ? ' · File' : ''}
                   </Text>
+                  {isShared && (
+                    <Text style={styles.sharedTag}>Shared with you</Text>
+                  )}
+                  {!!item.expiry_date && (
+                    <Text style={styles.rowExpiry}>
+                      {formatExpiryLabel(item.expiry_date)}
+                    </Text>
+                  )}
+                </View>
+                {!isShared && (
+                  <View style={styles.rowActions}>
+                    <Pressable
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        openEdit(item);
+                      }}
+                    >
+                      <Text style={styles.edit}>Edit</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        onDelete(item.id, item.title, item.owner_user_id);
+                      }}
+                    >
+                      <Text style={styles.delete}>Remove</Text>
+                    </Pressable>
+                  </View>
                 )}
-              </View>
-              <View style={styles.rowActions}>
-                <Pressable
-                  onPress={(e) => {
-                    e.stopPropagation?.();
-                    openEdit(item);
-                  }}
-                >
-                  <Text style={styles.edit}>Edit</Text>
-                </Pressable>
-                <Pressable
-                  onPress={(e) => {
-                    e.stopPropagation?.();
-                    onDelete(item.id, item.title);
-                  }}
-                >
-                  <Text style={styles.delete}>Remove</Text>
-                </Pressable>
-              </View>
-            </Pressable>
-          )}
+              </Pressable>
+            );
+          }}
         />
       )}
 
@@ -385,6 +404,12 @@ const styles = StyleSheet.create({
   },
   rowTitle: { fontSize: 16, fontWeight: '600', color: '#152447' },
   rowMeta: { fontSize: 13, color: '#5C5C5C', marginTop: 2 },
+  sharedTag: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1A5F9E',
+  },
   rowExpiry: {
     fontSize: 13,
     color: '#A96A2A',
