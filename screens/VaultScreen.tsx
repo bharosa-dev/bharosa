@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Modal,
+  ScrollView,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import {
@@ -26,12 +27,51 @@ type Props = {
   onOpenDocument: (id: string) => void;
 };
 
+const FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'insurance', label: 'Insurance' },
+  { key: 'id', label: 'ID' },
+  { key: 'bill', label: 'Bills' },
+  { key: 'health', label: 'Health' },
+  { key: 'other', label: 'Other' },
+] as const;
+
+type FilterKey = (typeof FILTERS)[number]['key'];
+
+function matchesFilter(doc: DocumentRow, filter: FilterKey): boolean {
+  if (filter === 'all') return true;
+  const t = (doc.doc_type || '').toLowerCase();
+  if (filter === 'insurance') return t.includes('insurance') || t.includes('policy');
+  if (filter === 'id') {
+    return (
+      t.includes('id') ||
+      t.includes('aadhaar') ||
+      t.includes('aadhar') ||
+      t.includes('pan') ||
+      t.includes('passport') ||
+      t.includes('license') ||
+      t.includes('licence')
+    );
+  }
+  if (filter === 'bill') return t.includes('bill') || t.includes('utility') || t.includes('invoice');
+  if (filter === 'health') return t.includes('health') || t.includes('medical') || t.includes('lab');
+  if (filter === 'other') {
+    return !matchesFilter(doc, 'insurance') &&
+      !matchesFilter(doc, 'id') &&
+      !matchesFilter(doc, 'bill') &&
+      !matchesFilter(doc, 'health');
+  }
+  return true;
+}
+
 export default function VaultScreen({ onBack, onOpenDocument }: Props) {
   const [docs, setDocs] = useState<DocumentRow[]>([]);
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<FilterKey>('all');
+  const [showAdd, setShowAdd] = useState(false);
 
   const [title, setTitle] = useState('');
   const [docType, setDocType] = useState('other');
@@ -54,12 +94,13 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return docs;
     return docs.filter((d) => {
+      if (!matchesFilter(d, filter)) return false;
+      if (!q) return true;
       const hay = `${d.title} ${d.doc_type} ${d.issuer || ''}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [docs, query]);
+  }, [docs, query, filter]);
 
   const resetForm = () => {
     setTitle('');
@@ -90,8 +131,9 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
       return;
     }
     resetForm();
+    setShowAdd(false);
     await load();
-    Alert.alert('Saved', 'Document added.');
+    Alert.alert('Saved', 'Document added. Open it to attach a file.');
   };
 
   const openEdit = (doc: DocumentRow) => {
@@ -158,7 +200,20 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
         <Pressable onPress={onBack}>
           <Text style={styles.back}>← Home</Text>
         </Pressable>
-        <Text style={styles.title}>Vault</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.title}>Vault</Text>
+          <Pressable
+            style={styles.addHeaderBtn}
+            onPress={() => {
+              setShowAdd((v) => !v);
+              if (showAdd) resetForm();
+            }}
+          >
+            <Text style={styles.addHeaderBtnText}>
+              {showAdd ? 'Close' : '+ Add'}
+            </Text>
+          </Pressable>
+        </View>
       </View>
 
       <TextInput
@@ -169,41 +224,58 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
         onChangeText={setQuery}
       />
 
-      <View style={styles.form}>
-        <Text style={styles.label}>Add document</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Title"
-          placeholderTextColor="#8A8A8A"
-          value={title}
-          onChangeText={setTitle}
-          editable={!editDoc}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Type"
-          placeholderTextColor="#8A8A8A"
-          value={docType}
-          onChangeText={setDocType}
-          editable={!editDoc}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Issuer (optional)"
-          placeholderTextColor="#8A8A8A"
-          value={issuer}
-          onChangeText={setIssuer}
-          editable={!editDoc}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Expiry YYYY-MM-DD"
-          placeholderTextColor="#8A8A8A"
-          value={expiryDate}
-          onChangeText={setExpiryDate}
-          editable={!editDoc}
-        />
-        {!editDoc && (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.chips}
+      >
+        {FILTERS.map((f) => {
+          const active = filter === f.key;
+          return (
+            <Pressable
+              key={f.key}
+              style={[styles.chip, active && styles.chipActive]}
+              onPress={() => setFilter(f.key)}
+            >
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                {f.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
+      {showAdd && (
+        <View style={styles.form}>
+          <Text style={styles.label}>New document</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Title (e.g. Car insurance)"
+            placeholderTextColor="#8A8A8A"
+            value={title}
+            onChangeText={setTitle}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Type (insurance, id, bill, health...)"
+            placeholderTextColor="#8A8A8A"
+            value={docType}
+            onChangeText={setDocType}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Issuer (optional)"
+            placeholderTextColor="#8A8A8A"
+            value={issuer}
+            onChangeText={setIssuer}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Expiry YYYY-MM-DD (optional)"
+            placeholderTextColor="#8A8A8A"
+            value={expiryDate}
+            onChangeText={setExpiryDate}
+          />
           <Pressable
             style={[styles.addBtn, saving && { opacity: 0.6 }]}
             onPress={onAdd}
@@ -212,11 +284,11 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
             {saving ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.addBtnText}>Add to vault</Text>
+              <Text style={styles.addBtnText}>Save to vault</Text>
             )}
           </Pressable>
-        )}
-      </View>
+        </View>
+      )}
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 24 }} color="#AD8438" />
@@ -228,7 +300,9 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
             <RefreshControl refreshing={loading} onRefresh={load} />
           }
           ListEmptyComponent={
-            <Text style={styles.empty}>No documents found.</Text>
+            <Text style={styles.empty}>
+              No documents in this filter. Try All or add one.
+            </Text>
           }
           renderItem={({ item }) => {
             const isShared = !!(myUserId && item.owner_user_id !== myUserId);
@@ -338,7 +412,19 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F7F7F5', paddingTop: 56 },
   header: { paddingHorizontal: 24, marginBottom: 8 },
   back: { color: '#1A5F9E', fontSize: 16, marginBottom: 8 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   title: { fontSize: 28, fontWeight: '700', color: '#152447' },
+  addHeaderBtn: {
+    backgroundColor: '#AD8438',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  addHeaderBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   search: {
     marginHorizontal: 24,
     marginBottom: 10,
@@ -351,6 +437,28 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#152447',
   },
+  chips: {
+    paddingHorizontal: 24,
+    paddingBottom: 10,
+    gap: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  chip: {
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+  },
+  chipActive: {
+    backgroundColor: '#152447',
+    borderColor: '#152447',
+  },
+  chipText: { fontSize: 13, color: '#5C5C5C', fontWeight: '600' },
+  chipTextActive: { color: '#fff' },
   form: {
     marginHorizontal: 24,
     marginBottom: 12,
