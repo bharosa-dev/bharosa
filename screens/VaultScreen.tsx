@@ -25,6 +25,8 @@ import {
   removeSharedDocFromMyVault,
   listMySharedOutDocumentIds,
 } from '../lib/sharing';
+import DocTypePicker from '../components/DocTypePicker';
+import ExpiryDateField from '../components/ExpiryDateField';
 
 type Props = {
   onBack: () => void;
@@ -149,10 +151,6 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
       Alert.alert('Enter a document title');
       return;
     }
-    if (expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
-      Alert.alert('Expiry must be YYYY-MM-DD', 'Example: 2027-03-31');
-      return;
-    }
     setSaving(true);
     const result = await createDocument({
       title,
@@ -178,7 +176,7 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
     }
     setEditDoc(doc);
     setTitle(doc.title);
-    setDocType(doc.doc_type);
+    setDocType(doc.doc_type || 'other');
     setIssuer(doc.issuer || '');
     setExpiryDate(doc.expiry_date || '');
   };
@@ -187,10 +185,6 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
     if (!editDoc) return;
     if (!title.trim()) {
       Alert.alert('Enter a document title');
-      return;
-    }
-    if (expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
-      Alert.alert('Expiry must be YYYY-MM-DD');
       return;
     }
     setSaving(true);
@@ -305,13 +299,7 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
             value={title}
             onChangeText={setTitle}
           />
-          <TextInput
-            style={styles.input}
-            placeholder="Type (insurance, id, bill...)"
-            placeholderTextColor="#8A8A8A"
-            value={docType}
-            onChangeText={setDocType}
-          />
+          <DocTypePicker value={docType} onChange={setDocType} />
           <TextInput
             style={styles.input}
             placeholder="Issuer (optional)"
@@ -319,13 +307,7 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
             value={issuer}
             onChangeText={setIssuer}
           />
-          <TextInput
-            style={styles.input}
-            placeholder="Expiry YYYY-MM-DD"
-            placeholderTextColor="#8A8A8A"
-            value={expiryDate}
-            onChangeText={setExpiryDate}
-          />
+          <ExpiryDateField value={expiryDate} onChange={setExpiryDate} />
           <Pressable
             style={[styles.addBtn, saving && { opacity: 0.6 }]}
             onPress={onAdd}
@@ -429,13 +411,7 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
               placeholder="Title"
               placeholderTextColor="#8A8A8A"
             />
-            <TextInput
-              style={styles.input}
-              value={docType}
-              onChangeText={setDocType}
-              placeholder="Type"
-              placeholderTextColor="#8A8A8A"
-            />
+            <DocTypePicker value={docType} onChange={setDocType} />
             <TextInput
               style={styles.input}
               value={issuer}
@@ -443,13 +419,7 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
               placeholder="Issuer"
               placeholderTextColor="#8A8A8A"
             />
-            <TextInput
-              style={styles.input}
-              value={expiryDate}
-              onChangeText={setExpiryDate}
-              placeholder="Expiry YYYY-MM-DD"
-              placeholderTextColor="#8A8A8A"
-            />
+            <ExpiryDateField value={expiryDate} onChange={setExpiryDate} />
             <Pressable
               style={[styles.addBtn, saving && { opacity: 0.6 }]}
               onPress={onSaveEdit}

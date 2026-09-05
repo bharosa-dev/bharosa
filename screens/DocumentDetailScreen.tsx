@@ -34,6 +34,7 @@ import {
   permissionLabel,
   ShareRow,
 } from '../lib/sharing';
+import ExpiryDateField from '../components/ExpiryDateField';
 
 type Props = {
   documentId: string;
@@ -59,13 +60,18 @@ export default function DocumentDetailScreen({
   const [expiryDate, setExpiryDate] = useState('');
 
   const isOwner = !!(doc && myUserId && doc.owner_user_id === myUserId);
+  const canEdit = isOwner || !!myPerm?.can_edit;
 
   const load = async () => {
     setLoading(true);
-    const { data: userData } = await supabase.auth.getUser();
-    setMyUserId(userData.user?.id ?? null);
 
-    const row = await getDocumentById(documentId);
+    const [{ data: userData }, row] = await Promise.all([
+      supabase.auth.getUser(),
+      getDocumentById(documentId),
+    ]);
+
+    const uid = userData.user?.id ?? null;
+    setMyUserId(uid);
     setDoc(row);
     if (row) {
       setTitle(row.title || '');
@@ -73,15 +79,27 @@ export default function DocumentDetailScreen({
       setExpiryDate(row.expiry_date || '');
     }
 
-    const family = await getMyFamily();
-    if (family) {
-      setMembers(await listFamilyMembers(family.id));
+    const ownerNow = !!(row && uid && row.owner_user_id === uid);
+
+    const tasks: Promise<unknown>[] = [
+      getMyPermissionForDocument(documentId).then(setMyPerm),
+    ];
+
+    if (ownerNow) {
+      tasks.push(listSharesForDocument(documentId).then(setShares));
+      tasks.push(
+        (async () => {
+          const family = await getMyFamily();
+          if (family) setMembers(await listFamilyMembers(family.id));
+          else setMembers([]);
+        })()
+      );
     } else {
+      setShares([]);
       setMembers([]);
     }
 
-    setShares(await listSharesForDocument(documentId));
-    setMyPerm(await getMyPermissionForDocument(documentId));
+    await Promise.all(tasks);
     setLoading(false);
   };
 
@@ -118,11 +136,14 @@ export default function DocumentDetailScreen({
 
   const onOpen = async () => {
     if (!doc?.file_path) {
-      Alert.alert('No file', 'Attach a file first.');
+      Alert.alert('No file', 'No file attached yet.');
       return;
     }
     if (!isOwner && myPerm && !myPerm.can_download) {
-      Alert.alert('Download not allowed', 'Owner did not grant download access.');
+      Alert.alert(
+        'Download not allowed',
+        'Owner shared this as View only.'
+      );
       return;
     }
     const url = await getDocumentSignedUrl(doc.file_path);
@@ -134,13 +155,9 @@ export default function DocumentDetailScreen({
   };
 
   const onConfirm = async () => {
-    if (!isOwner) return;
+    if (!canEdit) return;
     if (!title.trim()) {
       Alert.alert('Title is required');
-      return;
-    }
-    if (expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
-      Alert.alert('Expiry must be YYYY-MM-DD');
       return;
     }
     setBusy(true);
@@ -151,11 +168,11 @@ export default function DocumentDetailScreen({
     });
     setBusy(false);
     if (!result.ok) {
-      Alert.alert('Could not confirm', result.message);
+      Alert.alert('Could not save', result.message);
       return;
     }
     await load();
-    Alert.alert('Confirmed', 'Details saved.');
+    Alert.alert('Saved', 'Details updated.');
   };
 
   const onShare = () => {
@@ -343,6 +360,19 @@ export default function DocumentDetailScreen({
           </Text>
           <Text style={styles.cardLabel}>Your access</Text>
           <Text style={styles.cardValue}>{permissionLabel(myPerm)}</Text>
+
+          <Pressable
+            style={[styles.secondaryBtn, { marginTop: 12 }]}
+            onPress={onOpen}
+          >
+            <Text style={styles.secondaryBtnText}>
+              {!doc.file_path
+                ? 'No file attached'
+                : myPerm.can_download
+                ? 'Open / Download file'
+                : 'View only — download blocked'}
+            </Text>
+          </Pressable>
         </View>
       )}
 
@@ -385,9 +415,11 @@ export default function DocumentDetailScreen({
         </View>
       )}
 
-      {isOwner && (
+      {canEdit && (
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>Confirm details</Text>
+          <Text style={styles.cardLabel}>
+            {isOwner ? 'Confirm details' : 'Edit details'}
+          </Text>
           <TextInput
             style={styles.input}
             value={title}
@@ -402,19 +434,13 @@ export default function DocumentDetailScreen({
             placeholder="Issuer"
             placeholderTextColor="#8A8A8A"
           />
-          <TextInput
-            style={styles.input}
-            value={expiryDate}
-            onChangeText={setExpiryDate}
-            placeholder="Expiry YYYY-MM-DD"
-            placeholderTextColor="#8A8A8A"
-          />
+          <ExpiryDateField value={expiryDate} onChange={setExpiryDate} />
           <Pressable
             style={[styles.primaryBtn, busy && { opacity: 0.6 }]}
             onPress={onConfirm}
             disabled={busy}
           >
-            <Text style={styles.primaryBtnText}>Confirm & save</Text>
+            <Text style={styles.primaryBtnText}>Save details</Text>
           </Pressable>
         </View>
       )}
@@ -437,7 +463,7 @@ export default function DocumentDetailScreen({
         </Pressable>
       )}
 
-      {!!doc.file_path && (
+      {isOwner && !!doc.file_path && (
         <Pressable style={styles.secondaryBtn} onPress={onOpen}>
           <Text style={styles.secondaryBtnText}>Open file</Text>
         </Pressable>
