@@ -79,21 +79,26 @@ export async function createDocument(input: {
     return { ok: false, message: 'Not signed in' };
   }
 
-  const { data, error } = await supabase
-    .from('documents')
-    .insert({
-      owner_user_id: userData.user.id,
-      title: input.title.trim(),
-      doc_type: input.doc_type?.trim() || 'other',
-      issuer: input.issuer?.trim() || null,
-      expiry_date: input.expiry_date || null,
-      notes: input.notes?.trim() || null,
-    })
-    .select('id')
-    .single();
+  const { data, error } = await supabase.rpc('create_my_document', {
+    p_title: input.title.trim(),
+    p_doc_type: input.doc_type?.trim() || 'other',
+    p_issuer: input.issuer?.trim() || null,
+    p_expiry_date: input.expiry_date || null,
+    p_notes: input.notes?.trim() || null,
+  });
 
-  if (error) return { ok: false, message: error.message };
-  return { ok: true, id: data.id };
+  if (error) {
+    return {
+      ok: false,
+      message: `${error.message} | ${error.code ?? ''} | ${error.details ?? ''}`,
+    };
+  }
+
+  if (!data) {
+    return { ok: false, message: 'No document id returned' };
+  }
+
+  return { ok: true, id: String(data) };
 }
 
 export async function updateDocument(
