@@ -4,7 +4,7 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  FlatList,
+  SectionList,
   TextInput,
   Alert,
   ActivityIndicator,
@@ -21,6 +21,7 @@ import {
   formatExpiryLabel,
   DocumentRow,
 } from '../lib/documents';
+import { removeSharedDocFromMyVault } from '../lib/sharing';
 
 type Props = {
   onBack: () => void;
@@ -41,7 +42,8 @@ type FilterKey = (typeof FILTERS)[number]['key'];
 function matchesFilter(doc: DocumentRow, filter: FilterKey): boolean {
   if (filter === 'all') return true;
   const t = (doc.doc_type || '').toLowerCase();
-  if (filter === 'insurance') return t.includes('insurance') || t.includes('policy');
+  if (filter === 'insurance')
+    return t.includes('insurance') || t.includes('policy');
   if (filter === 'id') {
     return (
       t.includes('id') ||
@@ -53,13 +55,17 @@ function matchesFilter(doc: DocumentRow, filter: FilterKey): boolean {
       t.includes('licence')
     );
   }
-  if (filter === 'bill') return t.includes('bill') || t.includes('utility') || t.includes('invoice');
-  if (filter === 'health') return t.includes('health') || t.includes('medical') || t.includes('lab');
+  if (filter === 'bill')
+    return t.includes('bill') || t.includes('utility') || t.includes('invoice');
+  if (filter === 'health')
+    return t.includes('health') || t.includes('medical') || t.includes('lab');
   if (filter === 'other') {
-    return !matchesFilter(doc, 'insurance') &&
+    return (
+      !matchesFilter(doc, 'insurance') &&
       !matchesFilter(doc, 'id') &&
       !matchesFilter(doc, 'bill') &&
-      !matchesFilter(doc, 'health');
+      !matchesFilter(doc, 'health')
+    );
   }
   return true;
 }
@@ -102,6 +108,19 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
     });
   }, [docs, query, filter]);
 
+  const sections = useMemo(() => {
+    const mine = filtered.filter(
+      (d) => myUserId && d.owner_user_id === myUserId
+    );
+    const shared = filtered.filter(
+      (d) => myUserId && d.owner_user_id !== myUserId
+    );
+    const out: { title: string; data: DocumentRow[] }[] = [];
+    out.push({ title: 'My documents', data: mine });
+    out.push({ title: 'Shared with me', data: shared });
+    return out;
+  }, [filtered, myUserId]);
+
   const resetForm = () => {
     setTitle('');
     setDocType('other');
@@ -133,7 +152,7 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
     resetForm();
     setShowAdd(false);
     await load();
-    Alert.alert('Saved', 'Document added. Open it to attach a file.');
+    Alert.alert('Saved', 'Document added.');
   };
 
   const openEdit = (doc: DocumentRow) => {
@@ -175,11 +194,7 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
     await load();
   };
 
-  const onDelete = (id: string, name: string, ownerId: string) => {
-    if (myUserId && ownerId !== myUserId) {
-      Alert.alert('Shared document', 'Only the owner can remove it.');
-      return;
-    }
+  const onDeleteOwned = (id: string, name: string) => {
     Alert.alert('Remove document?', name, [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -192,6 +207,25 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
         },
       },
     ]);
+  };
+
+  const onRemoveShared = (id: string, name: string) => {
+    Alert.alert(
+      'Remove from your vault?',
+      `"${name}" will disappear for you only. The owner keeps their copy.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove for me',
+          style: 'destructive',
+          onPress: async () => {
+            const result = await removeSharedDocFromMyVault(id);
+            if (!result.ok) Alert.alert('Error', result.message);
+            else await load();
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -250,14 +284,14 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
           <Text style={styles.label}>New document</Text>
           <TextInput
             style={styles.input}
-            placeholder="Title (e.g. Car insurance)"
+            placeholder="Title"
             placeholderTextColor="#8A8A8A"
             value={title}
             onChangeText={setTitle}
           />
           <TextInput
             style={styles.input}
-            placeholder="Type (insurance, id, bill, health...)"
+            placeholder="Type (insurance, id, bill...)"
             placeholderTextColor="#8A8A8A"
             value={docType}
             onChangeText={setDocType}
@@ -271,7 +305,7 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
           />
           <TextInput
             style={styles.input}
-            placeholder="Expiry YYYY-MM-DD (optional)"
+            placeholder="Expiry YYYY-MM-DD"
             placeholderTextColor="#8A8A8A"
             value={expiryDate}
             onChangeText={setExpiryDate}
@@ -293,19 +327,20 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
       {loading ? (
         <ActivityIndicator style={{ marginTop: 24 }} color="#AD8438" />
       ) : (
-        <FlatList
-          data={filtered}
+        <SectionList
+          sections={sections}
           keyExtractor={(row) => row.id}
           refreshControl={
             <RefreshControl refreshing={loading} onRefresh={load} />
           }
-          ListEmptyComponent={
-            <Text style={styles.empty}>
-              No documents in this filter. Try All or add one.
-            </Text>
-          }
-          renderItem={({ item }) => {
-            const isShared = !!(myUserId && item.owner_user_id !== myUserId);
+          renderSectionHeader={({ section }) => (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+              <Text style={styles.sectionCount}>{section.data.length}</Text>
+            </View>
+          )}
+          renderItem={({ item, section }) => {
+            const isShared = section.title === 'Shared with me';
             return (
               <Pressable
                 style={styles.row}
@@ -318,38 +353,49 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
                     {item.issuer ? ` · ${item.issuer}` : ''}
                     {item.file_path ? ' · File' : ''}
                   </Text>
-                  {isShared && (
-                    <Text style={styles.sharedTag}>Shared with you</Text>
-                  )}
                   {!!item.expiry_date && (
                     <Text style={styles.rowExpiry}>
                       {formatExpiryLabel(item.expiry_date)}
                     </Text>
                   )}
                 </View>
-                {!isShared && (
-                  <View style={styles.rowActions}>
+                <View style={styles.rowActions}>
+                  {isShared ? (
                     <Pressable
                       onPress={(e) => {
                         e.stopPropagation?.();
-                        openEdit(item);
+                        onRemoveShared(item.id, item.title);
                       }}
                     >
-                      <Text style={styles.edit}>Edit</Text>
+                      <Text style={styles.delete}>Remove for me</Text>
                     </Pressable>
-                    <Pressable
-                      onPress={(e) => {
-                        e.stopPropagation?.();
-                        onDelete(item.id, item.title, item.owner_user_id);
-                      }}
-                    >
-                      <Text style={styles.delete}>Remove</Text>
-                    </Pressable>
-                  </View>
-                )}
+                  ) : (
+                    <>
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation?.();
+                          openEdit(item);
+                        }}
+                      >
+                        <Text style={styles.edit}>Edit</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation?.();
+                          onDeleteOwned(item.id, item.title);
+                        }}
+                      >
+                        <Text style={styles.delete}>Remove</Text>
+                      </Pressable>
+                    </>
+                  )}
+                </View>
               </Pressable>
             );
           }}
+          ListEmptyComponent={
+            <Text style={styles.empty}>No documents found.</Text>
+          }
         />
       )}
 
@@ -440,7 +486,6 @@ const styles = StyleSheet.create({
   chips: {
     paddingHorizontal: 24,
     paddingBottom: 10,
-    gap: 8,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -453,10 +498,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     marginRight: 8,
   },
-  chipActive: {
-    backgroundColor: '#152447',
-    borderColor: '#152447',
-  },
+  chipActive: { backgroundColor: '#152447', borderColor: '#152447' },
   chipText: { fontSize: 13, color: '#5C5C5C', fontWeight: '600' },
   chipTextActive: { color: '#fff' },
   form: {
@@ -493,6 +535,17 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   addBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  sectionHeader: {
+    paddingHorizontal: 24,
+    paddingTop: 14,
+    paddingBottom: 8,
+    backgroundColor: '#F7F7F5',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#152447' },
+  sectionCount: { fontSize: 13, color: '#5C5C5C', fontWeight: '600' },
   empty: {
     textAlign: 'center',
     color: '#5C5C5C',
@@ -512,12 +565,6 @@ const styles = StyleSheet.create({
   },
   rowTitle: { fontSize: 16, fontWeight: '600', color: '#152447' },
   rowMeta: { fontSize: 13, color: '#5C5C5C', marginTop: 2 },
-  sharedTag: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1A5F9E',
-  },
   rowExpiry: {
     fontSize: 13,
     color: '#A96A2A',
