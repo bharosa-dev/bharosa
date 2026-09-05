@@ -164,46 +164,88 @@ export default function DocumentDetailScreen({
       Alert.alert('No family members', 'Add a member on the Family tab first.');
       return;
     }
-    const buttons = members
-      .filter((m) => m.user_id !== myUserId)
-      .map((m) => ({
-        text: m.user_id.slice(0, 8) + '…',
-        onPress: async () => {
-          const result = await shareDocumentWithUser(documentId, m.user_id);
-          if (!result.ok) Alert.alert('Share failed', result.message);
-          else {
-            await load();
-            Alert.alert('Shared', 'Member can view this document.');
-          }
-        },
-      }));
 
-    // Prefer names from shares/profiles — quick resolve
     (async () => {
       const ids = members.map((m) => m.user_id);
       const { data: profiles } = await supabase
         .from('profiles')
         .select('id, full_name, email')
         .in('id', ids);
-      const named = members
-        .filter((m) => m.user_id !== myUserId)
-        .map((m) => {
-          const p = profiles?.find((x) => x.id === m.user_id);
-          const label = p?.full_name || p?.email || m.user_id.slice(0, 8);
-          return {
-            text: `${label} (${m.role})`,
-            onPress: async () => {
-              const result = await shareDocumentWithUser(documentId, m.user_id);
-              if (!result.ok) Alert.alert('Share failed', result.message);
-              else {
-                await load();
-                Alert.alert('Shared', 'Member can view this document.');
-              }
-            },
-          };
-        });
+
+      const pickMember = members.filter((m) => m.user_id !== myUserId);
+
+      const memberButtons = pickMember.map((m) => {
+        const p = profiles?.find((x) => x.id === m.user_id);
+        const label = p?.full_name || p?.email || m.user_id.slice(0, 8);
+        return {
+          text: `${label} (${m.role})`,
+          onPress: () => {
+            Alert.alert('Access level', `Sharing with ${label}`, [
+              {
+                text: 'View only',
+                onPress: async () => {
+                  const result = await shareDocumentWithUser(
+                    documentId,
+                    m.user_id,
+                    {
+                      can_view: true,
+                      can_download: false,
+                      can_edit: false,
+                    }
+                  );
+                  if (!result.ok) Alert.alert('Share failed', result.message);
+                  else {
+                    await load();
+                    Alert.alert('Shared', 'View only');
+                  }
+                },
+              },
+              {
+                text: 'View + Download',
+                onPress: async () => {
+                  const result = await shareDocumentWithUser(
+                    documentId,
+                    m.user_id,
+                    {
+                      can_view: true,
+                      can_download: true,
+                      can_edit: false,
+                    }
+                  );
+                  if (!result.ok) Alert.alert('Share failed', result.message);
+                  else {
+                    await load();
+                    Alert.alert('Shared', 'View + Download');
+                  }
+                },
+              },
+              {
+                text: 'Edit (includes download)',
+                onPress: async () => {
+                  const result = await shareDocumentWithUser(
+                    documentId,
+                    m.user_id,
+                    {
+                      can_view: true,
+                      can_download: true,
+                      can_edit: true,
+                    }
+                  );
+                  if (!result.ok) Alert.alert('Share failed', result.message);
+                  else {
+                    await load();
+                    Alert.alert('Shared', 'Edit access granted');
+                  }
+                },
+              },
+              { text: 'Cancel', style: 'cancel' },
+            ]);
+          },
+        };
+      });
+
       Alert.alert('Share with family member', 'Choose member', [
-        ...named,
+        ...memberButtons,
         { text: 'Cancel', style: 'cancel' },
       ]);
     })();
@@ -244,22 +286,18 @@ export default function DocumentDetailScreen({
         },
       ]);
     } else {
-      Alert.alert(
-        'Remove from your vault?',
-        'The owner keeps their copy.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Remove for me',
-            style: 'destructive',
-            onPress: async () => {
-              const result = await removeSharedDocFromMyVault(doc.id);
-              if (!result.ok) Alert.alert('Error', result.message);
-              else onDeleted();
-            },
+      Alert.alert('Remove from your vault?', 'The owner keeps their copy.', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove for me',
+          style: 'destructive',
+          onPress: async () => {
+            const result = await removeSharedDocFromMyVault(doc.id);
+            if (!result.ok) Alert.alert('Error', result.message);
+            else onDeleted();
           },
-        ]
-      );
+        },
+      ]);
     }
   };
 

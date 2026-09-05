@@ -132,3 +132,27 @@ export function permissionLabel(p: {
   if (p.can_download) parts.push('Download');
   return parts.length ? parts.join(' · ') : 'No access';
 }
+/** Document ids owned by me that have at least one active share */
+export async function listMySharedOutDocumentIds(
+    myUserId: string,
+    documentIds: string[]
+  ): Promise<Set<string>> {
+    const result = new Set<string>();
+    if (!documentIds.length) return result;
+  
+    const { data, error } = await supabase
+      .from('document_permissions')
+      .select('document_id')
+      .in('document_id', documentIds)
+      .is('revoked_at', null);
+  
+    if (error) {
+      console.log('listMySharedOutDocumentIds', error.message);
+      return result;
+    }
+  
+    for (const row of data ?? []) {
+      result.add(row.document_id);
+    }
+    return result;
+  }

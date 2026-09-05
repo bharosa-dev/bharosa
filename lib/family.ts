@@ -128,26 +128,35 @@ export async function listFamilyMembers(
 }
 
 export async function shareDocumentWithUser(
-  documentId: string,
-  targetUserId: string
-): Promise<{ ok: true } | { ok: false; message: string }> {
-  const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) return { ok: false, message: 'Not signed in' };
-
-  const { error } = await supabase.from('document_permissions').upsert(
-    {
-      document_id: documentId,
-      user_id: targetUserId,
-      can_view: true,
-      can_download: true,
-      can_edit: false,
-      can_share: false,
-      granted_by: userData.user.id,
-      revoked_at: null,
-    },
-    { onConflict: 'document_id,user_id' }
-  );
-
-  if (error) return { ok: false, message: error.message };
-  return { ok: true };
-}
+    documentId: string,
+    targetUserId: string,
+    access: {
+      can_view?: boolean;
+      can_edit?: boolean;
+      can_download?: boolean;
+    } = {}
+  ): Promise<{ ok: true } | { ok: false; message: string }> {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) return { ok: false, message: 'Not signed in' };
+  
+    const can_view = access.can_view !== false;
+    const can_edit = !!access.can_edit;
+    const can_download = access.can_download !== false || can_edit;
+  
+    const { error } = await supabase.from('document_permissions').upsert(
+      {
+        document_id: documentId,
+        user_id: targetUserId,
+        can_view,
+        can_edit,
+        can_download,
+        can_share: false,
+        granted_by: userData.user.id,
+        revoked_at: null,
+      },
+      { onConflict: 'document_id,user_id' }
+    );
+  
+    if (error) return { ok: false, message: error.message };
+    return { ok: true };
+  }

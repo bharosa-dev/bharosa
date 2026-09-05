@@ -21,7 +21,10 @@ import {
   formatExpiryLabel,
   DocumentRow,
 } from '../lib/documents';
-import { removeSharedDocFromMyVault } from '../lib/sharing';
+import {
+  removeSharedDocFromMyVault,
+  listMySharedOutDocumentIds,
+} from '../lib/sharing';
 
 type Props = {
   onBack: () => void;
@@ -73,6 +76,7 @@ function matchesFilter(doc: DocumentRow, filter: FilterKey): boolean {
 export default function VaultScreen({ onBack, onOpenDocument }: Props) {
   const [docs, setDocs] = useState<DocumentRow[]>([]);
   const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [sharedOutIds, setSharedOutIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState('');
@@ -88,9 +92,21 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
   const load = async () => {
     setLoading(true);
     const { data: userData } = await supabase.auth.getUser();
-    setMyUserId(userData.user?.id ?? null);
+    const uid = userData.user?.id ?? null;
+    setMyUserId(uid);
+
     const rows = await listMyDocuments();
     setDocs(rows);
+
+    if (uid) {
+      const mineIds = rows
+        .filter((d) => d.owner_user_id === uid)
+        .map((d) => d.id);
+      const sharedSet = await listMySharedOutDocumentIds(uid, mineIds);
+      setSharedOutIds(sharedSet);
+    } else {
+      setSharedOutIds(new Set());
+    }
     setLoading(false);
   };
 
@@ -115,10 +131,10 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
     const shared = filtered.filter(
       (d) => myUserId && d.owner_user_id !== myUserId
     );
-    const out: { title: string; data: DocumentRow[] }[] = [];
-    out.push({ title: 'My documents', data: mine });
-    out.push({ title: 'Shared with me', data: shared });
-    return out;
+    return [
+      { title: 'My documents', data: mine },
+      { title: 'Shared with me', data: shared },
+    ];
   }, [filtered, myUserId]);
 
   const resetForm = () => {
@@ -353,6 +369,9 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
                     {item.issuer ? ` · ${item.issuer}` : ''}
                     {item.file_path ? ' · File' : ''}
                   </Text>
+                  {!isShared && sharedOutIds.has(item.id) && (
+                    <Text style={styles.sharedOutTag}>Shared with family</Text>
+                  )}
                   {!!item.expiry_date && (
                     <Text style={styles.rowExpiry}>
                       {formatExpiryLabel(item.expiry_date)}
@@ -565,6 +584,12 @@ const styles = StyleSheet.create({
   },
   rowTitle: { fontSize: 16, fontWeight: '600', color: '#152447' },
   rowMeta: { fontSize: 13, color: '#5C5C5C', marginTop: 2 },
+  sharedOutTag: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#AD8438',
+  },
   rowExpiry: {
     fontSize: 13,
     color: '#A96A2A',
