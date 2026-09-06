@@ -30,7 +30,7 @@ import ExpiryDateField from '../components/ExpiryDateField';
 
 type Props = {
   onBack: () => void;
-  onOpenDocument: (id: string) => void;
+  onOpenDocument: (id: string, doc: DocumentRow) => void;
 };
 
 const FILTERS = [
@@ -104,8 +104,7 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
       const mineIds = rows
         .filter((d) => d.owner_user_id === uid)
         .map((d) => d.id);
-      const sharedSet = await listMySharedOutDocumentIds(uid, mineIds);
-      setSharedOutIds(sharedSet);
+      setSharedOutIds(await listMySharedOutDocumentIds(uid, mineIds));
     } else {
       setSharedOutIds(new Set());
     }
@@ -115,6 +114,7 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
   useEffect(() => {
     load();
   }, []);
+
   useEffect(() => {
     const channel = supabase
       .channel('vault-documents')
@@ -126,11 +126,11 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
         }
       )
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
   }, []);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return docs.filter((d) => {
@@ -357,7 +357,7 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
             return (
               <Pressable
                 style={styles.row}
-                onPress={() => onOpenDocument(item.id)}
+                onPress={() => onOpenDocument(item.id, item)}
               >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowTitle}>{item.title}</Text>

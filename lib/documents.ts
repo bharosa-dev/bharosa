@@ -30,13 +30,14 @@ export type DocumentRow = {
   file_size_bytes: number | null;
   extracted_fields: ExtractedFields;
   created_at: string;
+  updated_at?: string | null;
 };
 
 export async function listMyDocuments(): Promise<DocumentRow[]> {
   const { data, error } = await supabase
     .from('documents')
     .select(
-      'id, owner_user_id, title, doc_type, issuer, expiry_date, notes, confirmation_status, sensitivity, file_path, file_mime, file_size_bytes, extracted_fields, created_at'
+      'id, owner_user_id, title, doc_type, issuer, expiry_date, notes, confirmation_status, sensitivity, file_path, file_mime, file_size_bytes, extracted_fields, created_at, updated_at'
     )
     .is('deleted_at', null)
     .order('created_at', { ascending: false });

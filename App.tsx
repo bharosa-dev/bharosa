@@ -6,10 +6,12 @@ import LoginScreen from './screens/LoginScreen';
 import HomeScreen from './screens/HomeScreen';
 import VaultScreen from './screens/VaultScreen';
 import DocumentDetailScreen from './screens/DocumentDetailScreen';
+import FamilyScreen from './screens/FamilyScreen';
 import TabBar from './components/TabBar';
 import { ensureMyProfile, Profile } from './lib/profile';
+import { DocumentRow } from './lib/documents';
 
-type Screen = 'home' | 'vault' | 'detail';
+type Screen = 'home' | 'vault' | 'family' | 'detail';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -17,6 +19,7 @@ export default function App() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [screen, setScreen] = useState<Screen>('home');
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  const [preloadedDoc, setPreloadedDoc] = useState<DocumentRow | null>(null);
 
   const loadSessionAndProfile = async () => {
     const { data } = await supabase.auth.getSession();
@@ -29,6 +32,7 @@ export default function App() {
       setProfile(null);
       setScreen('home');
       setSelectedDocId(null);
+      setPreloadedDoc(null);
     }
     setLoading(false);
   };
@@ -46,6 +50,7 @@ export default function App() {
           setProfile(null);
           setScreen('home');
           setSelectedDocId(null);
+          setPreloadedDoc(null);
         }
       }
     );
@@ -62,6 +67,7 @@ export default function App() {
     setProfile(null);
     setScreen('home');
     setSelectedDocId(null);
+    setPreloadedDoc(null);
   };
 
   if (loading) {
@@ -82,7 +88,8 @@ export default function App() {
     );
   }
 
-  const showTabs = screen === 'home' || screen === 'vault';
+  const showTabs =
+    screen === 'home' || screen === 'vault' || screen === 'family';
 
   return (
     <View style={styles.root}>
@@ -98,21 +105,28 @@ export default function App() {
         {screen === 'vault' && (
           <VaultScreen
             onBack={() => setScreen('home')}
-            onOpenDocument={(id) => {
+            onOpenDocument={(id, doc) => {
               setSelectedDocId(id);
+              setPreloadedDoc(doc);
               setScreen('detail');
             }}
           />
         )}
+        {screen === 'family' && (
+          <FamilyScreen onBack={() => setScreen('home')} />
+        )}
         {screen === 'detail' && selectedDocId && (
           <DocumentDetailScreen
             documentId={selectedDocId}
+            initialDoc={preloadedDoc}
             onBack={() => {
               setSelectedDocId(null);
+              setPreloadedDoc(null);
               setScreen('vault');
             }}
             onDeleted={() => {
               setSelectedDocId(null);
+              setPreloadedDoc(null);
               setScreen('vault');
             }}
           />
@@ -120,9 +134,16 @@ export default function App() {
       </View>
       {showTabs && (
         <TabBar
-          active={screen === 'vault' ? 'vault' : 'home'}
+          active={
+            screen === 'vault'
+              ? 'vault'
+              : screen === 'family'
+              ? 'family'
+              : 'home'
+          }
           onChange={(tab) => {
             setSelectedDocId(null);
+            setPreloadedDoc(null);
             setScreen(tab);
           }}
         />

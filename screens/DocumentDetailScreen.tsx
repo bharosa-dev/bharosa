@@ -38,32 +38,41 @@ import ExpiryDateField from '../components/ExpiryDateField';
 
 type Props = {
   documentId: string;
+  initialDoc?: DocumentRow | null;
   onBack: () => void;
   onDeleted: () => void;
 };
 
+function formatUpdatedAt(iso?: string | null) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleString();
+}
+
 export default function DocumentDetailScreen({
   documentId,
+  initialDoc = null,
   onBack,
   onDeleted,
 }: Props) {
-  const [doc, setDoc] = useState<DocumentRow | null>(null);
+  const [doc, setDoc] = useState<DocumentRow | null>(initialDoc);
   const [myUserId, setMyUserId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialDoc);
   const [busy, setBusy] = useState(false);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [shares, setShares] = useState<ShareRow[]>([]);
   const [myPerm, setMyPerm] = useState<ShareRow | null>(null);
 
-  const [title, setTitle] = useState('');
-  const [issuer, setIssuer] = useState('');
-  const [expiryDate, setExpiryDate] = useState('');
+  const [title, setTitle] = useState(initialDoc?.title || '');
+  const [issuer, setIssuer] = useState(initialDoc?.issuer || '');
+  const [expiryDate, setExpiryDate] = useState(initialDoc?.expiry_date || '');
 
   const isOwner = !!(doc && myUserId && doc.owner_user_id === myUserId);
   const canEdit = isOwner || !!myPerm?.can_edit;
 
   const load = async () => {
-    setLoading(true);
+    if (!initialDoc) setLoading(true);
 
     const [{ data: userData }, row] = await Promise.all([
       supabase.auth.getUser(),
@@ -123,7 +132,6 @@ export default function DocumentDetailScreen({
         }
       )
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
@@ -162,10 +170,7 @@ export default function DocumentDetailScreen({
       return;
     }
     if (!isOwner && myPerm && !myPerm.can_download) {
-      Alert.alert(
-        'Download not allowed',
-        'Owner shared this as View only.'
-      );
+      Alert.alert('Download not allowed', 'Owner shared this as View only.');
       return;
     }
     const url = await getDocumentSignedUrl(doc.file_path);
@@ -340,7 +345,7 @@ export default function DocumentDetailScreen({
     }
   };
 
-  if (loading) {
+  if (loading && !doc) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#AD8438" />
@@ -373,6 +378,11 @@ export default function DocumentDetailScreen({
       <Text style={styles.status}>
         {isOwner ? 'You own this document' : 'Shared with you'}
       </Text>
+      {!!formatUpdatedAt(doc.updated_at || doc.created_at) && (
+        <Text style={styles.updated}>
+          Last updated: {formatUpdatedAt(doc.updated_at || doc.created_at)}
+        </Text>
+      )}
 
       {!isOwner && myPerm && (
         <View style={styles.card}>
@@ -382,7 +392,6 @@ export default function DocumentDetailScreen({
           </Text>
           <Text style={styles.cardLabel}>Your access</Text>
           <Text style={styles.cardValue}>{permissionLabel(myPerm)}</Text>
-
           <Pressable
             style={[styles.secondaryBtn, { marginTop: 12 }]}
             onPress={onOpen}
@@ -517,7 +526,12 @@ const styles = StyleSheet.create({
     color: '#1F6F54',
     fontWeight: '600',
     marginTop: 6,
-    marginBottom: 16,
+  },
+  updated: {
+    fontSize: 12,
+    color: '#8A8A8A',
+    marginBottom: 12,
+    marginTop: 4,
   },
   card: {
     backgroundColor: '#fff',
