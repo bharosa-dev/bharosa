@@ -107,6 +107,28 @@ export default function DocumentDetailScreen({
     load();
   }, [documentId]);
 
+  useEffect(() => {
+    const channel = supabase
+      .channel(`doc-${documentId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'documents',
+          filter: `id=eq.${documentId}`,
+        },
+        () => {
+          load();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [documentId]);
+
   const runAttach = async (source: 'image' | 'camera' | 'file') => {
     if (!isOwner) {
       Alert.alert('Only the owner can attach files');

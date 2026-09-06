@@ -115,7 +115,22 @@ export default function VaultScreen({ onBack, onOpenDocument }: Props) {
   useEffect(() => {
     load();
   }, []);
+  useEffect(() => {
+    const channel = supabase
+      .channel('vault-documents')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'documents' },
+        () => {
+          load();
+        }
+      )
+      .subscribe();
 
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return docs.filter((d) => {
