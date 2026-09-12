@@ -1,40 +1,48 @@
 {
   "expo": {
-    "name": "bharosa",
+    "name": "Bharosa",
     "slug": "bharosa",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "scheme": "bharosa",
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F7F7F5"
+      "backgroundColor": "#1A2744"
     },
     "ios": {
       "supportsTablet": true,
-      "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Allow Bharosa to attach document photos.",
-        "NSCameraUsageDescription": "Allow Bharosa to capture document photos."
-      }
+      "bundleIdentifier": "com.bharosa.app"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#F7F7F5",
-        "foregroundImage": "./assets/icon.png"
-      }
-    },
-    "web": {
-      "favicon": "./assets/favicon.png"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1A2744"
+      },
+      "package": "com.bharosa.app",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
+      "expo-secure-store",
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Bharosa to attach document photos.",
-          "cameraPermission": "Allow Bharosa to capture document photos."
+          "photosPermission": "Allow Bharosa to attach document photos."
         }
-      ]
-    ]
+      ],
+      "expo-font",
+      "expo-sharing"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "23288131-1fa4-45b2-9b1b-1a10ca39effb"
+      }
+    },
+    "owner": "bharosa-dev"
   }
 }
