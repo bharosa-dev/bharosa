@@ -7,7 +7,6 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "scheme": "bharosa",
-    "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -22,27 +21,15 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1A2744"
       },
-      "package": "com.bharosa.app",
-      "permissions": [
-        "android.permission.RECORD_AUDIO"
-      ]
+      "package": "com.bharosa.app"
     },
     "plugins": [
-      "expo-secure-store",
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Allow Bharosa to attach document photos."
-        }
-      ],
-      "expo-font",
-      "expo-sharing"
+      "expo-secure-store"
     ],
     "extra": {
       "eas": {
         "projectId": "23288131-1fa4-45b2-9b1b-1a10ca39effb"
       }
-    },
-    "owner": "bharosa-dev"
+    }
   }
 }
