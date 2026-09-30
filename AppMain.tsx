@@ -1,8 +1,6 @@
 import React, { useEffect, useState, Component, ErrorInfo, ReactNode } from 'react';
 import { View, StyleSheet, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { Colors } from './constants/theme';
-import { hasAcceptedCurrentPolicy, recordDpdpConsents } from './lib/dpdp';
-import PrivacyPolicyScreen from './screens/PrivacyPolicyScreen';
 import HomeScreen from './screens/HomeScreen';
 import VaultScreen from './screens/VaultScreen';
 import DocumentDetailScreen from './screens/DocumentDetailScreen';
@@ -15,7 +13,6 @@ import SharingScreen from './screens/SharingScreen';
 import MedicinesScreen from './screens/MedicinesScreen';
 import TabBar, { Tab } from './components/TabBar';
 import AddActionSheet, { AddAction } from './components/AddActionSheet';
-import { supabase } from './lib/supabase';
 
 class ScreenBoundary extends Component<
   { children: ReactNode; name: string },
@@ -33,11 +30,8 @@ class ScreenBoundary extends Component<
       return (
         <View style={styles.boot}>
           <Text style={styles.bootTitle}>{this.props.name} error</Text>
-          <Text style={styles.bootText}>{this.state.error.message}</Text>
-          <TouchableOpacity
-            style={styles.retry}
-            onPress={() => this.setState({ error: null })}
-          >
+          <Text style={styles.bootText}>{String(this.state.error.message)}</Text>
+          <TouchableOpacity style={styles.retry} onPress={() => this.setState({ error: null })}>
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
@@ -49,7 +43,7 @@ class ScreenBoundary extends Component<
 
 export default function AppMain({ session }: { session: any }) {
   const [tab, setTab] = useState<Tab>('home');
-  const [booting, setBooting] = useState(true);
+  const [ready, setReady] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detailPreload, setDetailPreload] = useState<any>(null);
   const [openAdd, setOpenAdd] = useState(false);
@@ -57,34 +51,15 @@ export default function AppMain({ session }: { session: any }) {
   const [showSupport, setShowSupport] = useState(false);
   const [showDataRights, setShowDataRights] = useState(false);
   const [showSharing, setShowSharing] = useState(false);
-  const [needReconsent, setNeedReconsent] = useState(false);
   const [showMeds, setShowMeds] = useState(false);
   const [showAddSheet, setShowAddSheet] = useState(false);
   const [openVehicleAdd, setOpenVehicleAdd] = useState(false);
   const [openVaccines, setOpenVaccines] = useState(false);
 
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        // Default: do NOT block on consent network; only re-prompt if clearly false
-        const ok = await Promise.race([
-          hasAcceptedCurrentPolicy().catch(() => true),
-          new Promise<boolean>((r) => setTimeout(() => r(true), 2000)),
-        ]);
-        if (alive) setNeedReconsent(ok === false);
-      } catch {
-        if (alive) setNeedReconsent(false);
-      } finally {
-        if (alive) setBooting(false);
-      }
-    })();
-
-    const t = setTimeout(() => {
-      if (alive) setBooting(false);
-    }, 2500);
-
-    // Native side-effects later — never on first paint
+    // No second privacy gate — LoginScreen already requires consent checkbox.
+    // Deferred side effects only; never block first paint.
+    const t = setTimeout(() => setReady(true), 50);
     const t2 = setTimeout(() => {
       try {
         const { enableScreenshotGuard } = require('./lib/screenshotGuard');
@@ -94,41 +69,19 @@ export default function AppMain({ session }: { session: any }) {
         const { registerForPushNotifications } = require('./lib/notifications');
         registerForPushNotifications()?.catch?.(() => {});
       } catch {}
-      try {
-        const { claimPendingInvites } = require('./lib/family');
-        claimPendingInvites()?.catch?.(() => {});
-      } catch {}
-    }, 1500);
-
+    }, 2000);
     return () => {
-      alive = false;
       clearTimeout(t);
       clearTimeout(t2);
     };
   }, [session?.user?.id]);
 
-  if (booting) {
+  if (!ready) {
     return (
       <View style={styles.boot}>
         <ActivityIndicator color={Colors.gold} size="large" />
-        <Text style={styles.bootText}>Loading your vault…</Text>
+        <Text style={styles.bootText}>Opening Bharosa…</Text>
       </View>
-    );
-  }
-
-  if (needReconsent) {
-    return (
-      <PrivacyPolicyScreen
-        requireAccept
-        onAccept={async () => {
-          try {
-            await recordDpdpConsents({ privacyAccepted: true });
-          } catch (e) {
-            console.log('reconsent', e);
-          }
-          setNeedReconsent(false);
-        }}
-      />
     );
   }
 
@@ -152,7 +105,7 @@ export default function AppMain({ session }: { session: any }) {
     if (action === 'document') {
       closeOverlays();
       setTab('vault');
-      setTimeout(() => setOpenAdd(true), 120);
+      setTimeout(() => setOpenAdd(true), 100);
     } else if (action === 'family') {
       setShowFamily(true);
     } else if (action === 'vaccines') {
@@ -160,7 +113,6 @@ export default function AppMain({ session }: { session: any }) {
       setTab('vault');
       setOpenVaccines(true);
     } else if (action === 'medicine') {
-      closeOverlays();
       setShowMeds(true);
     } else {
       closeOverlays();
@@ -169,7 +121,28 @@ export default function AppMain({ session }: { session: any }) {
     }
   };
 
-  let body: React.ReactNode = null;
+  let body: React.ReactNode = (
+    <ScreenBoundary name="Home">
+      <HomeScreen
+        onOpenVault={() => setTab('vault')}
+        onOpenDocument={(id) => openDocument(id)}
+        onOpenReminders={() => {
+          closeOverlays();
+          setTab('reminders');
+        }}
+        onOpenProfile={() => {
+          closeOverlays();
+          setTab('profile');
+        }}
+        onOpenFamily={() => setShowFamily(true)}
+        onOpenSharing={() => setShowSharing(true)}
+        onOpenScoreVault={() => setTab('vault')}
+        onOpenAdd={() => setShowAddSheet(true)}
+        onOpenMedicines={() => setShowMeds(true)}
+      />
+    </ScreenBoundary>
+  );
+
   try {
     if (detailId) {
       body = (
@@ -220,28 +193,6 @@ export default function AppMain({ session }: { session: any }) {
           <MedicinesScreen />
         </ScreenBoundary>
       );
-    } else if (tab === 'home') {
-      body = (
-        <ScreenBoundary name="Home">
-          <HomeScreen
-            onOpenVault={() => setTab('vault')}
-            onOpenDocument={(id) => openDocument(id)}
-            onOpenReminders={() => {
-              closeOverlays();
-              setTab('reminders');
-            }}
-            onOpenMedicines={() => setShowMeds(true)}
-            onOpenProfile={() => {
-              closeOverlays();
-              setTab('profile');
-            }}
-            onOpenFamily={() => setShowFamily(true)}
-            onOpenSharing={() => setShowSharing(true)}
-            onOpenScoreVault={() => setTab('vault')}
-            onOpenAdd={() => setShowAddSheet(true)}
-          />
-        </ScreenBoundary>
-      );
     } else if (tab === 'vault') {
       body = (
         <ScreenBoundary name="Vault">
@@ -263,7 +214,7 @@ export default function AppMain({ session }: { session: any }) {
           <RemindersScreen onOpenDocument={(id) => openDocument(id)} />
         </ScreenBoundary>
       );
-    } else {
+    } else if (tab === 'profile') {
       body = (
         <ScreenBoundary name="Profile">
           <ProfileScreen
@@ -281,9 +232,6 @@ export default function AppMain({ session }: { session: any }) {
       <View style={styles.boot}>
         <Text style={styles.bootTitle}>Screen failed</Text>
         <Text style={styles.bootText}>{e?.message || String(e)}</Text>
-        <TouchableOpacity style={styles.retry} onPress={() => setTab('home')}>
-          <Text style={styles.retryText}>Go home</Text>
-        </TouchableOpacity>
       </View>
     );
   }
