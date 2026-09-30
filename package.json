@@ -1,41 +1,47 @@
 {
   "name": "bharosa",
-  "version": "1.0.0",
+  "version": "1.0.5",
   "main": "index.ts",
-  "dependencies": {
-    "@expo/vector-icons": "^15.0.2",
-    "@react-native-async-storage/async-storage": "2.2.0",
-    "@react-native-community/datetimepicker": "9.1.0",
-    "@react-native-picker/picker": "2.11.4",
-    "@supabase/supabase-js": "^2.116.0",
-    "expo": "~57.0.22",
-    "expo-blob": "^57.0.1",
-    "expo-constants": "~57.0.18",
-    "expo-device": "~57.0.2",
-    "expo-document-picker": "~57.0.2",
-    "expo-file-system": "~57.0.7",
-    "expo-font": "~57.0.4",
-    "expo-image-picker": "~57.0.17",
-    "expo-local-authentication": "~57.0.3",
-    "expo-notifications": "~57.0.18",
-    "expo-print": "~57.0.2",
-    "expo-secure-store": "~57.0.4",
-    "expo-sharing": "~57.0.19",
-    "expo-status-bar": "~57.0.1",
-    "react": "19.2.3",
-    "react-native": "0.86.3",
-    "react-native-qrcode-svg": "^6.3.24",
-    "react-native-svg": "15.15.4"
-  },
-  "devDependencies": {
-    "@types/react": "~19.2.4",
-    "typescript": "~6.0.3"
-  },
+  "private": true,
   "scripts": {
     "start": "expo start",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
-    "web": "expo start --web"
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "export:android": "expo export --platform android",
+    "doctor": "npx expo-doctor"
   },
-  "private": true
+  "dependencies": {
+    "@expo/vector-icons": "~14.0.4",
+    "@react-native-async-storage/async-storage": "1.23.1",
+    "@react-native-community/datetimepicker": "8.2.0",
+    "@supabase/supabase-js": "^2.49.1",
+    "expo": "~52.0.46",
+    "expo-asset": "~11.0.5",
+    "expo-constants": "~17.0.8",
+    "expo-device": "~7.0.3",
+    "expo-document-picker": "~13.0.3",
+    "expo-file-system": "~18.0.12",
+    "expo-font": "~13.0.4",
+    "expo-image-picker": "~16.0.6",
+    "expo-linking": "~7.0.5",
+    "expo-local-authentication": "~15.0.2",
+    "expo-notifications": "~0.29.14",
+    "expo-print": "~14.0.3",
+    "expo-secure-store": "~14.0.1",
+    "expo-sharing": "~13.0.1",
+    "expo-status-bar": "~2.0.1",
+    "react": "18.3.1",
+    "react-native": "0.76.9",
+    "react-native-safe-area-context": "4.12.0",
+    "react-native-svg": "15.8.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@types/react": "~18.3.12",
+    "babel-preset-expo": "~12.0.0",
+    "typescript": "~5.3.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
 }
